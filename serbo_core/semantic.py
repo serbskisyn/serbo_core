@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sqlite3
 import struct
 from pathlib import Path
@@ -32,7 +33,9 @@ from serbo_core.embeddings import EMBEDDING_DIM, embed
 
 logger = logging.getLogger(__name__)
 
-SEMANTIC_DB = Path(__file__).parent.parent / "data" / "semantic.db"
+# Pfad per Env überschreibbar, damit der laufende Bot SEINE Daten nutzt (nicht den
+# serbo_core-Paketordner). Default = Paketordner/data (Standalone-Fallback).
+SEMANTIC_DB = Path(os.getenv("SEMANTIC_DB_PATH") or (Path(__file__).parent.parent / "data" / "semantic.db"))
 
 COLLECTIONS = ("todos", "people", "decisions", "notes", "entities", "intents")
 

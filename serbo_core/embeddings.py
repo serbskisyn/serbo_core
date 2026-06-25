@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import struct
 from collections import OrderedDict
 from pathlib import Path
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 EMBEDDING_MODEL = LLM_EMBED_MODEL
 EMBEDDING_DIM = 3072
 
-CACHE_FILE = Path(__file__).parent.parent / "data" / "embedding_cache.bin"
+CACHE_FILE = Path(os.getenv("EMBEDDING_CACHE_PATH") or (Path(__file__).parent.parent / "data" / "embedding_cache.bin"))
 
 # LRU bound: keep at most MAX entries in memory + on disk. The on-disk file is
 # append-only for speed; it is compacted (rewritten from the live LRU set) once
