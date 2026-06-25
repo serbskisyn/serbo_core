@@ -1,6 +1,7 @@
 pyproject.toml
 serbo_core/__init__.py
 serbo_core/config.py
+serbo_core/gspread.py
 serbo_core/llm_client.py
 serbo_core/llm_compat.py
 serbo_core.egg-info/PKG-INFO
