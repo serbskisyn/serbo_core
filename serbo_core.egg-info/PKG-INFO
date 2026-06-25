@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: serbo_core
+Version: 0.1.0
+Summary: Geteilter Kern für die Serbo-Bots (Goldkind / Atolls / Privat): Config, Security, Telegram-Plumbing, LLM-Client, Sheets, Semantic.
+Requires-Python: >=3.11
+Requires-Dist: python-dotenv
+Requires-Dist: httpx
