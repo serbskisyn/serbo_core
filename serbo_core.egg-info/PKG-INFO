@@ -5,3 +5,6 @@ Summary: Geteilter Kern für die Serbo-Bots (Goldkind / Atolls / Privat): Config
 Requires-Python: >=3.11
 Requires-Dist: python-dotenv
 Requires-Dist: httpx
+Requires-Dist: gspread
+Requires-Dist: google-auth
+Requires-Dist: sqlite-vec

@@ -1,2 +1,5 @@
 python-dotenv
 httpx
+gspread
+google-auth
+sqlite-vec

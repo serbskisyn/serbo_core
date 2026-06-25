@@ -1,9 +1,13 @@
 pyproject.toml
 serbo_core/__init__.py
+serbo_core/bot_context.py
 serbo_core/config.py
+serbo_core/embeddings.py
 serbo_core/gspread.py
 serbo_core/llm_client.py
 serbo_core/llm_compat.py
+serbo_core/semantic.py
+serbo_core/web_search.py
 serbo_core.egg-info/PKG-INFO
 serbo_core.egg-info/SOURCES.txt
 serbo_core.egg-info/dependency_links.txt

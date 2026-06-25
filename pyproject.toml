@@ -12,6 +12,7 @@ dependencies = [
     "httpx",
     "gspread",
     "google-auth",
+    "sqlite-vec",
 ]
 
 [tool.setuptools.packages.find]

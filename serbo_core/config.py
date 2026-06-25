@@ -55,3 +55,10 @@ ALLOWED_USER_IDS: set[int] = set(
 # Rate Limiting
 RATE_LIMIT_MAX_REQUESTS: int = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", 10))
 RATE_LIMIT_WINDOW_SECONDS: int = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", 60))
+
+# Admin-Chat für System-Alerts/Reports (geteilt). Fallback: kleinste Whitelist-ID.
+_admin_raw = os.getenv("ADMIN_CHAT_ID", "")
+if _admin_raw.strip():
+    ADMIN_CHAT_ID: int | None = int(_admin_raw.strip())
+else:
+    ADMIN_CHAT_ID: int | None = min(ALLOWED_USER_IDS) if ALLOWED_USER_IDS else None
