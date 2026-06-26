@@ -22,8 +22,12 @@ SCOPES = [
 ]
 
 
-def _get_client() -> gspread.Client:
-    json_str = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+def _get_client(env_var: str = "GOOGLE_SERVICE_ACCOUNT_JSON",
+                creds_file_env: str = "GOOGLE_CREDENTIALS_FILE") -> gspread.Client:
+    """Service-Account-Client. Default-Credential = GOOGLE_SERVICE_ACCOUNT_JSON
+    (Goldkind/Atolls-Bestand). Über env_var kann ein ZWEITER, isolierter Account
+    genutzt werden — z. B. GPM_SERVICE_ACCOUNT_JSON fürs Atolls-SF-Sheet."""
+    json_str = os.environ.get(env_var, "").strip()
     if json_str:
         try:
             info = json.loads(json_str)
@@ -32,9 +36,9 @@ def _get_client() -> gspread.Client:
             creds = Credentials.from_service_account_info(info, scopes=SCOPES)
             return gspread.authorize(creds)
         except Exception as e:
-            logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON ungueltig (%s), versuche credentials.json", e)
+            logger.warning("%s ungueltig (%s), versuche credentials.json", env_var, e)
 
-    creds_path = os.path.abspath(os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json"))
+    creds_path = os.path.abspath(os.getenv(creds_file_env, "credentials.json"))
     if os.path.exists(creds_path):
         creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
         return gspread.authorize(creds)
