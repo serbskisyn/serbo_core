@@ -16,9 +16,12 @@ from google.oauth2.service_account import Credentials
 
 logger = logging.getLogger(__name__)
 
+# Least-Privilege: alle Aufrufer öffnen Sheets per open_by_key (kein Öffnen per
+# Titel, kein Anlegen, kein Drive-Listing) → der volle Drive-Scope ist unnötig.
+# Nur der Spreadsheets-Scope, damit ein geleaktes Credential nicht die ganze
+# Drive des Accounts erreicht.
 SCOPES = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 
 
