@@ -61,6 +61,12 @@ async def chat(
                 r = await client.post(_url(), json=payload, headers=headers)
             r.raise_for_status()
             data = r.json()
+    usage = data.get("usage") or {}
+    logger.info(
+        "[LLM-CALL] model=%s total_tokens=%s prompt=%s completion=%s",
+        model, usage.get("total_tokens", "?"),
+        usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?"),
+    )
     return (data["choices"][0]["message"].get("content") or "")
 
 
