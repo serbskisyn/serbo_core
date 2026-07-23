@@ -34,9 +34,12 @@ async def chat(
     max_tokens: int = 600,
     tools: list[dict] | None = None,
     timeout: float = 30.0,
+    extra: dict | None = None,
 ) -> str:
     """Single LiteLLM chat completion. Returns the assistant content string.
-    Raises httpx errors so callers keep their existing try/except handling."""
+    Raises httpx errors so callers keep their existing try/except handling.
+    `extra` merges additional payload keys (z. B. reasoning_effort='none' um das
+    Thinking-Token-Budget von gemini-2.5-flash abzuschalten)."""
     if not LITELLM_BASE_URL or not LITELLM_API_KEY:
         raise RuntimeError("LiteLLM nicht konfiguriert (LITELLM_BASE_URL/API_KEY fehlt)")
     payload: dict = {
@@ -47,6 +50,8 @@ async def chat(
     }
     if tools:
         payload["tools"] = tools
+    if extra:
+        payload.update(extra)
     headers = {
         "Authorization": f"Bearer {LITELLM_API_KEY}",
         "Content-Type": "application/json",
