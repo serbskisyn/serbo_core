@@ -28,6 +28,8 @@ def _get_client(env_var: str = "GOOGLE_SERVICE_ACCOUNT_JSON",
     (Goldkind/Atolls-Bestand). Über env_var kann ein ZWEITER, isolierter Account
     genutzt werden — z. B. GPM_SERVICE_ACCOUNT_JSON fürs Atolls-SF-Sheet."""
     json_str = os.environ.get(env_var, "").strip()
+    if json_str and not json_str.startswith("{") and os.path.exists(json_str):   # Pfad statt Inline-JSON
+        return gspread.authorize(Credentials.from_service_account_file(json_str, scopes=SCOPES))
     if json_str:
         try:
             info = json.loads(json_str)
