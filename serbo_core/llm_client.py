@@ -73,7 +73,11 @@ async def chat(
         model, usage.get("total_tokens", "?"),
         usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?"),
     )
-    return (data["choices"][0]["message"].get("content") or "")
+    choices = data.get("choices") or []
+    if not choices:   # z. B. Gemini 2.5: max_tokens komplett fürs Reasoning verbraucht → keine Antwort
+        logger.warning("[LLM-CALL] model=%s: keine choices (max_tokens=%s zu knapp?)", model, max_tokens)
+        return ""
+    return (choices[0].get("message") or {}).get("content") or ""
 
 
 async def chat_stream(
