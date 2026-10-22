@@ -9,6 +9,8 @@ A tiny on-disk cache (SHA-256-of-text → vector) prevents re-embedding
 the same exact string. Cache lives next to semantic.db.
 
 Returns lists of floats so callers can pass them straight to sqlite-vec.
+In memory the cache keeps each vector as packed float32 bytes (12 KB) instead of a
+list of Python floats (~100 KB) — for 5000 entries ~60 MB statt ~500 MB RSS.
 """
 from __future__ import annotations
 
@@ -41,7 +43,7 @@ _MAX_ENTRIES = max(100, EMBED_CACHE_MAX_ENTRIES)
 _COMPACT_THRESHOLD = _MAX_ENTRIES * 2
 
 _lock = asyncio.Lock()
-_cache: "OrderedDict[str, list[float]]" = OrderedDict()  # insertion/LRU order
+_cache: "OrderedDict[str, bytes]" = OrderedDict()  # insertion/LRU order, float32-packed
 _cache_loaded = False
 _disk_records = 0  # records currently appended to CACHE_FILE
 
@@ -65,10 +67,8 @@ def _load_cache() -> None:
         records = 0
         while offset + record_size <= len(data):
             key = data[offset:offset + 32].hex()
-            vec_bytes = data[offset + 32:offset + record_size]
-            vec = list(struct.unpack(f"{EMBEDDING_DIM}f", vec_bytes))
             # Re-inserting moves the key to the end → file order == LRU order.
-            _cache[key] = vec
+            _cache[key] = data[offset + 32:offset + record_size]
             _cache.move_to_end(key)
             offset += record_size
             records += 1
@@ -79,8 +79,18 @@ def _load_cache() -> None:
     _cache_loaded = True
     # Trim to the cap (oldest first) + compact the file if it's overgrown.
     _evict_if_needed()
-    if _disk_records > _COMPACT_THRESHOLD or _disk_records > len(_cache):
+    # Nur bei deutlichem Überhang neu schreiben — sonst kostete jeder Bot-Start ~11 s
+    # Rewrite, sobald auch nur ein paar Einträge über dem Cap lagen.
+    if _disk_records > _COMPACT_THRESHOLD or _disk_records > len(_cache) * 1.2:
         _compact()
+
+
+def _pack(vec) -> bytes:
+    return vec if isinstance(vec, (bytes, bytearray)) else struct.pack(f"{EMBEDDING_DIM}f", *vec)
+
+
+def _unpack(vec) -> list[float]:
+    return list(struct.unpack(f"{EMBEDDING_DIM}f", vec)) if isinstance(vec, (bytes, bytearray)) else vec
 
 
 def _evict_if_needed() -> None:
@@ -98,7 +108,7 @@ def _compact() -> None:
         with tmp.open("wb") as f:
             for key, vec in _cache.items():
                 f.write(bytes.fromhex(key))
-                f.write(struct.pack(f"{EMBEDDING_DIM}f", *vec))
+                f.write(_pack(vec))
         tmp.replace(CACHE_FILE)
         _disk_records = len(_cache)
         logger.info("embeddings: cache compacted to %d entries", _disk_records)
@@ -146,7 +156,7 @@ async def embed(text: str) -> list[float] | None:
         if cached is not None:
             _cache.move_to_end(key)  # mark most-recently-used
     if cached:
-        return cached
+        return _unpack(cached)
 
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
@@ -175,7 +185,7 @@ async def embed(text: str) -> list[float] | None:
         return None
 
     async with _lock:
-        _cache[key] = vec
+        _cache[key] = _pack(vec)
         _cache.move_to_end(key)
         _evict_if_needed()
     _append_cache(text, vec)
