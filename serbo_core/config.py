@@ -38,10 +38,6 @@ LITELLM_KEY_RENEW_DAYS: int = int(os.getenv("LITELLM_KEY_RENEW_DAYS", "7"))
 LITELLM_KEY_REMINDER_HOUR: int = int(os.getenv("LITELLM_KEY_REMINDER_HOUR", "9"))
 LITELLM_KEY_REMINDER_MINUTE: int = int(os.getenv("LITELLM_KEY_REMINDER_MINUTE", "0"))
 
-# ── Grok (xAI) für X.com Live-Search ──────────────────────────────────────────
-GROK_MODEL    = os.getenv("GROK_MODEL", "x-ai/grok-4.3")
-GROK_API_KEY  = os.getenv("GROK_API_KEY", "")
-GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
 BOT_NAME           = os.getenv("BOT_NAME", "MeinAgent")
 LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO")
 TAVILY_API_KEY     = os.getenv("TAVILY_API_KEY")

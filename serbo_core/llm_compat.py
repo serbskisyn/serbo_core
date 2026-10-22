@@ -7,12 +7,9 @@ raises). Many callers rely on that resilience.
 """
 import httpx
 import logging
-from serbo_core.config import OPENROUTER_API_KEY, OPENROUTER_MODEL  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-EXTRACTOR_MODEL = "openai/gpt-4o-mini"
 
 
 async def ask_llm(

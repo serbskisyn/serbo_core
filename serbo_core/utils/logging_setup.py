@@ -27,6 +27,8 @@ def setup_logging(log_name: str = "bot.log", log_dir: str | None = None):
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(logging.Formatter(fmt))
 
-    logging.basicConfig(level=level, handlers=[console_handler, file_handler])
+    # force=True: falls ein importiertes Modul schon basicConfig gesetzt hat (kudos_bot tat das),
+    # gewinnt trotzdem dieses Setup — sonst greifen Datei-Log + Rotation still nicht.
+    logging.basicConfig(level=level, handlers=[console_handler, file_handler], force=True)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("telegram").setLevel(logging.WARNING)
