@@ -10,6 +10,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
+import sys
+import time
+from contextvars import ContextVar
+from dataclasses import dataclass
 
 import httpx
 
@@ -25,6 +30,84 @@ llm_semaphore = asyncio.Semaphore(max(1, LLM_MAX_CONCURRENCY))
 
 def _url() -> str:
     return f"{LITELLM_BASE_URL.rstrip('/')}/chat/completions"
+
+
+# ── Signale neben der Antwort ────────────────────────────────────────────────
+# Ein Guardrail/Filter/Fallback zeigt sich selten als Fehler, sondern als leere,
+# abgeschnittene oder ausweichende Antwort — die Aufrufer fallen dann still auf
+# Vorlagen zurück. Jeder Call bekommt darum eine Klassifikation (kind), die in der
+# [LLM-CALL]-Logzeile steht (Health-Check zählt sie) und per `last_signal` für den
+# Aufrufer lesbar ist. kind: ok | filtered | refused | empty | truncated | downgraded
+_FILTER_FINISH = {"content_filter", "safety", "refusal", "blocklist", "prohibited_content",
+                  "spii", "recitation", "image_safety"}
+# Nur der Anfang der Antwort: Ablehnungen stehen vorn, ein Witz mit „I can't…" mitten drin nicht.
+_REFUSAL_RX = re.compile(
+    r"^\W{0,3}(?:I(?:'m| am) sorry,? but|I can(?:'|no)t (?:help|assist|write|create|do|provide)"
+    r"|I(?:'m| am) (?:unable|not able) to|I won'?t (?:write|create|help)"
+    r"|(?:Es )?[Tt]ut mir leid,? (?:aber )?ich kann|Ich kann (?:dir )?(?:da |dabei |hier )?leider nicht"
+    r"|Ich kann (?:dir |dabei |hier )?(?:keine?[nrs]? |das |so etwas |solche )[^.!?]{0,60}?(?:nicht )?"
+    r"(?:helfen|schreiben|erstellen|verfassen|unterstützen|formulieren)|Das kann ich (?:leider )?nicht)", re.I)
+_CLIENT_MODULES = ("serbo_core.llm_client", "serbo_core.llm_compat",
+                   "app.services.llm_client", "app.services.llm_compat")
+
+
+@dataclass
+class CallSignal:
+    caller: str
+    model: str          # angefragtes Modell/Alias
+    model_used: str     # laut Antwort (weicht ab → LiteLLM-Fallback)
+    finish: str | None
+    latency_ms: int
+    chars: int
+    kind: str
+
+
+# Signal des letzten chat()-Calls im aktuellen Task. Ein awaited Coroutine-Call läuft im
+# selben Context → der Aufrufer sieht den Wert direkt nach `await chat(...)`.
+last_signal: ContextVar[CallSignal | None] = ContextVar("llm_last_signal", default=None)
+
+
+def _caller() -> str:
+    """Erstes Modul.Funktion außerhalb des LLM-Clients (für die Zählung pro Aufrufstelle)."""
+    f = sys._getframe(1)
+    while f is not None:
+        mod = f.f_globals.get("__name__", "")
+        if not mod.startswith(_CLIENT_MODULES):
+            return f"{mod}.{f.f_code.co_name}"
+        f = f.f_back
+    return "?"
+
+
+def _model_base(name: str) -> str:
+    return (name or "").rsplit("/", 1)[-1].lower()
+
+
+def classify(content: str, finish: str | None, model: str, model_used: str,
+             fallbacks: str | None = None) -> str:
+    finish_l = (finish or "").lower()
+    if finish_l in _FILTER_FINISH:
+        return "filtered"
+    if model_used and _model_base(model_used) != _model_base(model) or (fallbacks or "0") not in ("", "0"):
+        return "downgraded"
+    if not (content or "").strip():
+        return "empty"
+    if _REFUSAL_RX.match(content.strip()[:200]):
+        return "refused"
+    if finish_l == "length":
+        return "truncated"
+    return "ok"
+
+
+def _record(caller: str, model: str, model_used: str, finish: str | None, t0: float,
+            content: str, usage: str, fallbacks: str | None = None) -> None:
+    kind = classify(content, finish, model, model_used, fallbacks)
+    sig = CallSignal(caller=caller, model=model, model_used=model_used or model, finish=finish,
+                     latency_ms=int((time.monotonic() - t0) * 1000), chars=len(content or ""), kind=kind)
+    last_signal.set(sig)
+    used = "" if _model_base(sig.model_used) == _model_base(model) else f" used={sig.model_used}"
+    logger.log(logging.INFO if kind == "ok" else logging.WARNING,
+               "[LLM-CALL] caller=%s model=%s%s kind=%s finish=%s ms=%d chars=%d %s",
+               caller, model, used, kind, finish, sig.latency_ms, sig.chars, usage)
 
 
 async def chat(
@@ -57,7 +140,10 @@ async def chat(
         "Authorization": f"Bearer {LITELLM_API_KEY}",
         "Content-Type": "application/json",
     }
+    caller = _caller()
+    last_signal.set(None)
     async with llm_semaphore:
+        t0 = time.monotonic()
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(_url(), json=payload, headers=headers)
             # Some models (e.g. Claude Opus 4.8 on Vertex) reject the temperature
@@ -68,16 +154,18 @@ async def chat(
             r.raise_for_status()
             data = r.json()
     usage = data.get("usage") or {}
-    logger.info(
-        "[LLM-CALL] model=%s total_tokens=%s prompt=%s completion=%s",
-        model, usage.get("total_tokens", "?"),
-        usage.get("prompt_tokens", "?"), usage.get("completion_tokens", "?"),
-    )
+    tokens = (f"total_tokens={usage.get('total_tokens', '?')} prompt={usage.get('prompt_tokens', '?')} "
+              f"completion={usage.get('completion_tokens', '?')}")
     choices = data.get("choices") or []
-    if not choices:   # z. B. Gemini 2.5: max_tokens komplett fürs Reasoning verbraucht → keine Antwort
-        logger.warning("[LLM-CALL] model=%s: keine choices (max_tokens=%s zu knapp?)", model, max_tokens)
-        return ""
-    return (choices[0].get("message") or {}).get("content") or ""
+    # Gemini 2.5 ohne choices: max_tokens komplett fürs Reasoning verbraucht → keine Antwort
+    choice = choices[0] if choices else {}
+    content = (choice.get("message") or {}).get("content") or ""
+    headers_in = getattr(r, "headers", None) or {}
+    _record(caller, model, str(data.get("model") or ""),
+            choice.get("finish_reason") or ("no_choices" if not choices else None), t0, content,
+            tokens + ("" if choices else f" max_tokens={max_tokens}"),
+            headers_in.get("x-litellm-attempted-fallbacks"))
+    return content
 
 
 async def chat_stream(
@@ -98,11 +186,15 @@ async def chat_stream(
     if extra:
         payload.update(extra)
     headers = {"Authorization": f"Bearer {LITELLM_API_KEY}", "Content-Type": "application/json"}
+    caller = _caller()
+    last_signal.set(None)
     async with llm_semaphore:
+        t0 = time.monotonic()
         async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, read=180.0)) as client:
             for attempt in range(2):
                 parts: list[str] = []
                 finish = None
+                model_used = ""
                 async with client.stream("POST", _url(), json=payload, headers=headers) as r:
                     if r.status_code == 400 and attempt == 0:
                         body = (await r.aread()).decode(errors="replace").lower()
@@ -117,17 +209,19 @@ async def chat_stream(
                         if data == "[DONE]":
                             break
                         try:
-                            ch = json.loads(data)["choices"][0]
+                            chunk = json.loads(data)
+                            ch = chunk["choices"][0]
                         except (ValueError, KeyError, IndexError):
                             continue
+                        model_used = chunk.get("model") or model_used
                         finish = ch.get("finish_reason") or finish
                         delta = ch.get("delta") or {}
                         if delta.get("content"):
                             parts.append(delta["content"])
+                    fallbacks = r.headers.get("x-litellm-attempted-fallbacks")
                 out = "".join(parts)
-                logger.info("[LLM-CALL] model=%s stream=1 chars=%d finish=%s", model, len(out), finish)
-                if finish == "length":
-                    logger.warning("chat_stream: max_tokens=%d erreicht → Ausgabe abgeschnitten", max_tokens)
+                _record(caller, model, model_used, finish, t0, out, f"stream=1 max_tokens={max_tokens}",
+                        fallbacks)
                 return out
     raise RuntimeError("chat_stream: kein Ergebnis")
 
