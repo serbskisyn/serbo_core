@@ -17,7 +17,14 @@ async def ask_llm(
     history: list[dict] = None,
     system_prompt: str = "Du bist ein hilfreicher Assistent. Antworte auf Deutsch.",
     model: str | None = None,
+    max_tokens: int = 4096,
+    extra: dict | None = None,
 ) -> str:
+    """Chat-Antwort als Text (Fehler → deutsche Meldung statt Exception).
+    max_tokens=4096: gemini-2.5-flash denkt vor der Antwort und hat mit 1024 regelmäßig
+    das Budget verbraucht (leer/abgeschnitten). Das Limit kostet nur, was genutzt wird;
+    reicht es trotzdem nicht, verdoppelt chat() einmal. Reine Umformulier-Aufgaben können
+    das Denken per extra={"reasoning_effort": "none"} abschalten."""
     from serbo_core.llm_client import chat as _llm_chat
     from serbo_core.config import LLM_CHEAP_MODEL
 
@@ -29,7 +36,7 @@ async def ask_llm(
     try:
         return await _llm_chat(
             messages, model=model or LLM_CHEAP_MODEL,
-            temperature=0.7, max_tokens=1024, timeout=60.0,
+            temperature=0.7, max_tokens=max_tokens, timeout=60.0, extra=extra,
         )
     except httpx.TimeoutException:
         logger.error("LLM Timeout")
